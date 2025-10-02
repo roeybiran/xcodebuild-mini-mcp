@@ -19,19 +19,19 @@ export async function build(options: { scheme: string; warn?: boolean; forTestin
         .split('\n')
         .filter(line => line.includes('error:'))
         .join('\n');
-      return `BUILD FAILED! \n${errorLines}`;
+      return `BUILD FAILED\n${errorLines}`;
     }
 
     if (warn) {
       const warnings = output.split('\n').filter(line => line.includes('warning:'));
       if (warnings.length > 0) {
-        return 'BUILD SUCCEEDED WITH WARNINGS!\nWarnings:\n' + warnings.join('\n');
+        return `BUILD SUCCEEDED WITH WARNINGS\n${warnings.join('\n')}`;
       }
     }
 
     return "BUILD SUCCEEDED!";
   } catch (error) {
-    return `BUILD FAILED! \n${error instanceof Error ? error.message : String(error)}`;
+    return `BUILD FAILED\n${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
@@ -39,10 +39,10 @@ export async function listTests(scheme: string, src?: string): Promise<string> {
   
   try {
     const output = await executeCommand('xcodebuild', [
+      'test',
       '-destination', DESTINATION,
       '-destination-timeout', '0',
       '-scheme', scheme,
-      'test',
       '-enumerate-tests',
       '-test-enumeration-style', 'flat',
       '-test-enumeration-format', 'json'
@@ -77,10 +77,10 @@ export async function runTests(scheme: string, only?: string, src?: string): Pro
   }
 
   const args = [
+    'test',
     '-destination', DESTINATION,
     '-destination-timeout', '0',
     '-scheme', scheme,
-    'test',
     '-skipPackageUpdates',
     '-skipPackagePluginValidation',
     '-skipMacroValidation',
@@ -96,7 +96,7 @@ export async function runTests(scheme: string, only?: string, src?: string): Pro
     
     const xcresultMatch = output.match(/xcresult[^\s]+/);
     if (!xcresultMatch) {
-      return 'Could not find test results.';
+      return 'Error: Could not find `.xcresult` test results file.';
     }
 
     const xcresult = xcresultMatch[0];
@@ -115,7 +115,7 @@ export async function runTests(scheme: string, only?: string, src?: string): Pro
       return 'TEST SUCCEEDED';
     }
 
-    let result = 'TEST FAILED\n\nTest Failures:\n';
+    let result = 'TEST FAILED\n';
     failures.forEach((failure: any, i: number) => {
       result += `\n${i + 1}. ${failure.testName || 'Unknown Test'}\n`;
       result += `   Identifier: ${failure.testIdentifierString || 'Unknown'}\n`;
@@ -124,7 +124,7 @@ export async function runTests(scheme: string, only?: string, src?: string): Pro
 
     return result;
   } catch (error) {
-    return `TEST FAILED! \n${error instanceof Error ? error.message : String(error)}`;
+    return `TEST FAILED\n${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
