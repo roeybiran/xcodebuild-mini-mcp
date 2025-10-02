@@ -1,38 +1,42 @@
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 
 const DESTINATION = 'platform=macOS,arch=arm64';
 
-export async function build(options: { scheme: string; warn?: boolean; forTesting?: boolean }): Promise<string> {
-  const { scheme, warn = false, forTesting = false } = options;
+export async function build(options: { scheme: string; warn?: boolean; forTesting?: boolean; src?: string }): Promise<string> {
+  const { scheme, warn = false, forTesting = false, src } = options;
   
   try {
     const output = await executeCommand('xcodebuild', [
+      forTesting ? 'build-for-testing' : 'build',
       '-scheme', scheme,
       '-quiet',
       '-destination', DESTINATION,
       '-destination-timeout', '0',
-      ...forTesting ? 'build-for-testing' : 'build'
-    ]);
+    ], src);
 
     if (output.includes('error:')) {
-      return `BUILD FAILED! \n${output}`;
+      const errorLines = output
+        .split('\n')
+        .filter(line => line.includes('error:'))
+        .join('\n');
+      return `BUILD FAILED! \n${errorLines}`;
     }
 
-    let result = 'BUILD SUCCEEDED';
     if (warn) {
       const warnings = output.split('\n').filter(line => line.includes('warning:'));
       if (warnings.length > 0) {
-        result += '\n\nWarnings:\n' + warnings.join('\n');
+        return 'BUILD SUCCEEDED WITH WARNINGS!\nWarnings:\n' + warnings.join('\n');
       }
     }
 
-    return result;
+    return "BUILD SUCCEEDED!";
   } catch (error) {
     return `BUILD FAILED! \n${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
-export async function listTests(scheme: string): Promise<string> {
+export async function listTests(scheme: string, src?: string): Promise<string> {
+  
   try {
     const output = await executeCommand('xcodebuild', [
       '-destination', DESTINATION,
@@ -42,7 +46,7 @@ export async function listTests(scheme: string): Promise<string> {
       '-enumerate-tests',
       '-test-enumeration-style', 'flat',
       '-test-enumeration-format', 'json'
-    ]);
+    ], src);
 
     const lines = output.split('\n');
     const tests: string[] = [];
@@ -66,8 +70,8 @@ export async function listTests(scheme: string): Promise<string> {
   }
 }
 
-export async function runTests(scheme: string, only?: string): Promise<string> {
-  const buildResult = await build({ scheme, forTesting: true });
+export async function runTests(scheme: string, only?: string, src?: string): Promise<string> {
+  const buildResult = await build({ scheme, forTesting: true, src });
   if (buildResult.includes('BUILD FAILED')) {
     return buildResult;
   }
@@ -88,7 +92,7 @@ export async function runTests(scheme: string, only?: string): Promise<string> {
   }
 
   try {
-    const output = await executeCommand('xcodebuild', args);
+    const output = await executeCommand('xcodebuild', args, src);
     
     const xcresultMatch = output.match(/xcresult[^\s]+/);
     if (!xcresultMatch) {
@@ -97,7 +101,7 @@ export async function runTests(scheme: string, only?: string): Promise<string> {
 
     const xcresult = xcresultMatch[0];
     
-    const parsed = await parseTestResults(xcresult);
+    const parsed = await parseTestResults(xcresult, src);
     
     const totalTests = parsed.totalTestCount || 0;
     
@@ -125,10 +129,11 @@ export async function runTests(scheme: string, only?: string): Promise<string> {
 }
 
 
-async function parseTestResults(xcresultPath: string): Promise<any> {
+async function parseTestResults(xcresultPath: string, src?: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const child = spawn('xcrun', ['xcresulttool', 'get', 'test-results', 'summary', '--path', xcresultPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: src || process.cwd(),
     });
 
     let stdout = '';
@@ -160,10 +165,12 @@ async function parseTestResults(xcresultPath: string): Promise<any> {
     });
   });
 }
-async function executeCommand(command: string, args: string[] = []): Promise<string> {
+
+async function executeCommand(command: string, args: string[] = [], src?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: src || process.cwd(),
     });
 
     let stdout = '';
@@ -177,12 +184,8 @@ async function executeCommand(command: string, args: string[] = []): Promise<str
       stderr += data.toString();
     });
 
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout);
-      } else {
-        reject(new Error(`Command failed with code ${code}: ${stderr || stdout}`));
-      }
+    child.on('close', () => {
+      resolve(stdout + stderr);
     });
 
     child.on('error', (error) => {

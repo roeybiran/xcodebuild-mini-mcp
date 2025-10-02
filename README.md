@@ -194,3 +194,47 @@ All errors are returned with descriptive messages and proper error flags.
 ## License
 
 MIT
+
+<!-- 
+## Building the Project
+
+- Only errors fail the build.
+- By default, only errors are printed. To include warnings too, pass the `--warn` flag. 
+  
+```bash
+./xcodebuild.sh build --scheme=<SCHEME> [--warn]
+```
+
+## Testing
+
+### Running the Tests
+
+- Use this command to **build AND run** tests. 
+- `<TEST>` can be a test target (e.g. "AppTests"), suite (e.g. "NetworkTests") or function (e.g. "check_fetching_should_work()")
+- NEVER pass additional arguments to this script, or pipe to other programs.
+
+```bash
+# running all tests in a scheme
+./xcodebuild.sh run-tests --scheme=<SCHEME>
+
+# running a specific test in a scheme
+./xcodebuild.sh run-tests --scheme=<SCHEME> --only=<TEST_TARGET/TEST_SUITE/TEST_METHOD()>
+```
+
+### Building the Tests
+
+- Use this command EXCLUSIVELY to **just build** tests.
+- NEVER pass additional arguments to this script, or pipe to other programs.
+- NEVER run this command unless I tell you to!
+
+```bash
+./xcodebuild.sh build-tests --scheme=<SCHEME>
+```
+
+### Listing Tests
+
+```bash
+./xcodebuild.sh list-tests --scheme=<SCHEME>
+```
+
+ -->
