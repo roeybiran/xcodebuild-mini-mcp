@@ -1,0 +1,33 @@
+{
+  "name": "xcodebuild-mini-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Xcode build operations",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && chmod 755 build/index.js",
+    "start": "node build/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "files": [
+    "build"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "xcode",
+    "build",
+    "ios",
+    "macos"
+  ],
+  "author": "",
+  "license": "MIT"
+}
