@@ -25,7 +25,7 @@ server.tool(
       content: [
         {
           type: "text",
-          text: result,
+          text: result.text,
         },
       ],
     };
@@ -52,7 +52,7 @@ server.tool(
       content: [
         {
           type: "text",
-          text: result,
+          text: result.text,
         },
       ],
     };
@@ -67,7 +67,7 @@ server.tool(
     src: z.string().optional(),
   },
   async ({ scheme, src }) => {
-    const result = await listTests(scheme, src);
+    const result = await listTests({ scheme, src });
 
     return {
       content: [
@@ -89,7 +89,7 @@ server.tool(
     src: z.string().optional(),
   },
   async ({ scheme, only, src }) => {
-    const result = await runTests(scheme, only, src);
+    const result = await runTests({ scheme, only, src });
 
     return {
       content: [

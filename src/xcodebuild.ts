@@ -1,195 +1,229 @@
-import { spawn, exec } from 'child_process';
+import { execa } from "execa";
+import { join } from "path";
+import { tmpdir } from "os";
+import { randomUUID } from "crypto";
 
-const DESTINATION = 'platform=macOS,arch=arm64';
+const DESTINATION = "platform=macOS,arch=arm64";
 
-export async function build(options: { scheme: string; warn?: boolean; forTesting?: boolean; src?: string }): Promise<string> {
+export async function build(options: {
+  scheme: string;
+  warn?: boolean;
+  forTesting?: boolean;
+  src?: string;
+}): Promise<{ result: "success" | "failure"; text: string }> {
   const { scheme, warn = false, forTesting = false, src } = options;
-  
-  try {
-    const output = await executeCommand('xcodebuild', [
-      forTesting ? 'build-for-testing' : 'build',
-      '-scheme', scheme,
-      '-quiet',
-      '-destination', DESTINATION,
-      '-destination-timeout', '0',
-    ], src);
 
-    if (output.includes('error:')) {
-      const errorLines = output
-        .split('\n')
-        .filter(line => line.includes('error:'))
-        .join('\n');
-      return `BUILD FAILED\n${errorLines}`;
+  const result = await execa(
+    "xcodebuild",
+    [
+      forTesting ? "build-for-testing" : "build",
+      "-scheme",
+      scheme,
+      "-quiet",
+      "-destination",
+      DESTINATION,
+      "-destination-timeout",
+      "0",
+    ],
+    {
+      cwd: src || process.cwd(),
+      all: true,
+      reject: false,
     }
+  );
 
+  const errorLineMatcher = /\d: (error|warning): /;
+  if (result.exitCode !== 0) {
+    if (result.all.match(errorLineMatcher)) {
+      const errorsOrWarnings = result.all
+        .split("\n")
+        .map((line) => {
+          const match = line.match(errorLineMatcher);
+          if (match && match[1] === "error") {
+            return { type: "error", message: line };
+          } else if (match && match[1] === "warning") {
+            return { type: "warning", message: line };
+          }
+        })
+        .filter((item) => item !== undefined);
+
+      let output: string[] = [];
+      if (warn) {
+        output.push(...errorsOrWarnings.map((item) => item.message));
+      } else {
+        output.push(
+          ...errorsOrWarnings
+            .filter((item) => item.type === "error")
+            .map((item) => item.message)
+        );
+      }
+
+      return { result: "failure", text: `BUILD FAILED\n${output.join("\n")}` };
+    } else {
+      return {
+        result: "failure",
+        text: `Error: an unknown error occurred:\n${result.all}`,
+      };
+    }
+  } else {
     if (warn) {
-      const warnings = output.split('\n').filter(line => line.includes('warning:'));
+      const output = result.all ?? "";
+      const warnings = output
+        .split("\n")
+        .filter((line) => line.match(errorLineMatcher));
       if (warnings.length > 0) {
-        return `BUILD SUCCEEDED WITH WARNINGS\n${warnings.join('\n')}`;
+        return {
+          result: "success",
+          text: `BUILD SUCCEEDED WITH WARNINGS\n${warnings.join("\n")}`,
+        };
       }
     }
-
-    return "BUILD SUCCEEDED!";
-  } catch (error) {
-    return `BUILD FAILED\n${error instanceof Error ? error.message : String(error)}`;
+    return { result: "success", text: "BUILD SUCCEEDED" };
   }
 }
 
-export async function listTests(scheme: string, src?: string): Promise<string> {
-  
-  try {
-    const output = await executeCommand('xcodebuild', [
-      'test',
-      '-destination', DESTINATION,
-      '-destination-timeout', '0',
-      '-scheme', scheme,
-      '-enumerate-tests',
-      '-test-enumeration-style', 'flat',
-      '-test-enumeration-format', 'json'
-    ], src);
+export async function listTests(options: {
+  scheme: string;
+  src?: string;
+}): Promise<string> {
+  const { scheme, src } = options;
 
-    const lines = output.split('\n');
-    const tests: string[] = [];
-    
-    for (const line of lines) {
-      if (line.includes('identifier')) {
-        const match = line.match(/"identifier"\s*:\s*"([^"]+)"/);
-        if (match) {
-          tests.push(match[1]);
-        }
+  const result = await execa(
+    "xcodebuild",
+    [
+      "test",
+      "-destination",
+      DESTINATION,
+      "-destination-timeout",
+      "0",
+      "-scheme",
+      scheme,
+      "-enumerate-tests",
+      "-test-enumeration-style",
+      "flat",
+      "-test-enumeration-format",
+      "json",
+    ],
+    {
+      cwd: src || process.cwd(),
+      all: true,
+    }
+  );
+
+  if (result.exitCode !== 0) {
+    return `Failed to list tests: ${result.all}`;
+  }
+
+  const lines = result.all?.split("\n");
+  const tests: string[] = [];
+
+  for (const line of lines) {
+    if (line.includes("identifier")) {
+      const match = line.match(/"identifier"\s*:\s*"([^"]+)"/);
+      if (match) {
+        tests.push(match[1]);
       }
     }
-    
-    if (tests.length === 0) {
-      return 'No tests found for this scheme.';
-    }
-
-    return `Found ${tests.length} tests:\n${tests.map((test, i) => `${i + 1}. ${test}`).join('\n')}`;
-  } catch (error) {
-    return `Failed to list tests: ${error instanceof Error ? error.message : String(error)}`;
   }
+
+  if (tests.length === 0) {
+    return "No tests found for this scheme.";
+  }
+
+  return `Found ${tests.length} tests:\n${tests
+    .map((test, i) => `${i + 1}. ${test}`)
+    .join("\n")}`;
 }
 
-export async function runTests(scheme: string, only?: string, src?: string): Promise<string> {
+export async function runTests(options: {
+  scheme: string;
+  only?: string;
+  src?: string;
+}): Promise<string> {
+  const { scheme, only, src } = options;
+
   const buildResult = await build({ scheme, forTesting: true, src });
-  if (buildResult.includes('BUILD FAILED')) {
-    return buildResult;
+
+  if (buildResult.result === "failure") {
+    return buildResult.text;
   }
+
+  const uuid = randomUUID();
+  const resultBundlePath = join(tmpdir(), uuid);
 
   const args = [
-    'test',
-    '-destination', DESTINATION,
-    '-destination-timeout', '0',
-    '-scheme', scheme,
-    '-skipPackageUpdates',
-    '-skipPackagePluginValidation',
-    '-skipMacroValidation',
-    '-skipPackageSignatureValidation'
+    "test",
+    "-destination",
+    DESTINATION,
+    "-destination-timeout",
+    "0",
+    "-scheme",
+    scheme,
+    "-skipPackageUpdates",
+    "-skipPackagePluginValidation",
+    "-skipMacroValidation",
+    "-skipPackageSignatureValidation",
+    "-resultBundlePath",
+    resultBundlePath,
   ];
 
   if (only) {
-    args.push('-only-testing', only);
+    args.push("-only-testing", only);
   }
 
+  const testResult = await execa("xcodebuild", args, {
+    cwd: src || process.cwd(),
+    all: true,
+    reject: false,
+  });
+
+  const xcresultOutput = await execa(
+    "xcrun",
+    [
+      "xcresulttool",
+      "get",
+      "test-results",
+      "summary",
+      "--path",
+      resultBundlePath,
+    ],
+    {
+      cwd: src || process.cwd(),
+    }
+  );
+
+  let parsed;
   try {
-    const output = await executeCommand('xcodebuild', args, src);
-    
-    const xcresultMatch = output.match(/xcresult[^\s]+/);
-    if (!xcresultMatch) {
-      return 'Error: Could not find `.xcresult` test results file.';
-    }
-
-    const xcresult = xcresultMatch[0];
-    
-    const parsed = await parseTestResults(xcresult, src);
-    
-    const totalTests = parsed.totalTestCount || 0;
-    
-    if (totalTests === 0) {
-      return 'No tests were run. Are you sure the specified test(s) exist?';
-    }
-
-    const failures = parsed.testFailures || [];
-
-    if (failures.length === 0) {
-      return 'TEST SUCCEEDED';
-    }
-
-    let result = 'TEST FAILED\n';
-    failures.forEach((failure: any, i: number) => {
-      result += `\n${i + 1}. ${failure.testName || 'Unknown Test'}\n`;
-      result += `   Identifier: ${failure.testIdentifierString || 'Unknown'}\n`;
-      result += `   Failure: ${failure.failureText || 'No details available'}\n`;
-    });
-
-    return result;
-  } catch (error) {
-    return `TEST FAILED\n${error instanceof Error ? error.message : String(error)}`;
+    parsed = JSON.parse(xcresultOutput.stdout);
+  } catch (parseError) {
+    return `Error: failed to parse test results JSON: ${parseError}`;
   }
-}
 
+  const totalTests = parsed.totalTestCount || 0;
 
-async function parseTestResults(xcresultPath: string, src?: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('xcrun', ['xcresulttool', 'get', 'test-results', 'summary', '--path', xcresultPath], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: src || process.cwd(),
-    });
+  if (totalTests === 0) {
+    return "No tests were run. Are you sure the specified test(s) exist?";
+  }
 
-    let stdout = '';
-    let stderr = '';
+  const failures = parsed.testFailures || [];
 
-    child.stdout?.on('data', (data) => {
-      stdout += data.toString();
-    });
+  if (failures.length === 0) {
+    return "TEST SUCCEEDED";
+  }
 
-    child.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        try {
-          const parsed = JSON.parse(stdout);
-          resolve(parsed);
-        } catch (parseError) {
-          reject(new Error(`Failed to parse test results: ${parseError}`));
-        }
-      } else {
-        reject(new Error(`xcresulttool failed with code ${code}: ${stderr}`));
-      }
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
+  const failureDetails: {
+    Number: number;
+    TestName: string;
+    Identifier: string;
+    Failure: string;
+  }[] = failures.map((failure: any, i: number) => {
+    return [
+      `Test: ${failure.testName || "UNKNOWN"}`,
+      `Test Identifier: ${failure.testIdentifierString || "UNKNOWN"}`,
+      `Test Failure: ${failure.failureText || "UNKNOWN"}`,
+      `--------------------------------`,
+    ].join("\n");
   });
-}
 
-async function executeCommand(command: string, args: string[] = [], src?: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      cwd: src || process.cwd(),
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout?.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('close', () => {
-      resolve(stdout + stderr);
-    });
-
-    child.on('error', (error) => {
-      reject(error);
-    });
-  });
+  return `TEST FAILED\n${failureDetails.join("\n")}`;
 }
