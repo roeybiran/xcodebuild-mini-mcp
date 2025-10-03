@@ -11,7 +11,7 @@ export async function build(options: {
   forTesting?: boolean;
   src?: string;
 }): Promise<{ result: "success" | "failure"; text: string }> {
-  const { scheme, warn = false, forTesting = false, src } = options;
+  const { scheme, warn = false, forTesting = false, src = process.cwd() } = options;
 
   const result = await execa(
     "xcodebuild",
@@ -26,7 +26,7 @@ export async function build(options: {
       "0",
     ],
     {
-      cwd: src || process.cwd(),
+      cwd: src,
       all: true,
       reject: false,
     }
@@ -86,7 +86,7 @@ export async function listTests(options: {
   scheme: string;
   src?: string;
 }): Promise<string> {
-  const { scheme, src } = options;
+  const { scheme, src = process.cwd() } = options;
 
   const result = await execa(
     "xcodebuild",
@@ -105,13 +105,14 @@ export async function listTests(options: {
       "json",
     ],
     {
-      cwd: src || process.cwd(),
+      cwd: src,
       all: true,
+      reject: false,
     }
   );
 
   if (result.exitCode !== 0) {
-    return `Failed to list tests: ${result.all}`;
+    return `Failed to list tests.`;
   }
 
   const lines = result.all?.split("\n");
@@ -140,7 +141,7 @@ export async function runTests(options: {
   only?: string;
   src?: string;
 }): Promise<string> {
-  const { scheme, only, src } = options;
+  const { scheme, only, src = process.cwd() } = options;
 
   const buildResult = await build({ scheme, forTesting: true, src });
 
@@ -172,7 +173,7 @@ export async function runTests(options: {
   }
 
   const testResult = await execa("xcodebuild", args, {
-    cwd: src || process.cwd(),
+    cwd: src,
     all: true,
     reject: false,
   });
@@ -188,7 +189,7 @@ export async function runTests(options: {
       resultBundlePath,
     ],
     {
-      cwd: src || process.cwd(),
+      cwd: src,
     }
   );
 
