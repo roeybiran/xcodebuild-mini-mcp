@@ -1,6 +1,6 @@
 {
   "name": "xcodebuild-mini-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for Xcode build operations",
   "engines": {
     "node": ">=22.18.0"
@@ -13,7 +13,8 @@
     "test": "exit 0"
   },
   "files": [
-    "src", "tsconfig.json"
+    "src",
+    "tsconfig.json"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
