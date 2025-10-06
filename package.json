@@ -1,7 +1,7 @@
 {
   "name": "@roeybiran/xcodebuild-mini-mcp",
   "version": "1.0.3",
-  "description": "MCP server for Xcode build operations",
+  "description": "A simple MCP server for xcodebuild, tailored to Mac app development",
   "engines": {
     "node": ">=22.18.0"
   },
@@ -30,8 +30,7 @@
   },
   "keywords": [
     "mcp",
-    "xcode",
-    "build",
+    "xcodebuild",
     "macos"
   ],
   "author": "",
