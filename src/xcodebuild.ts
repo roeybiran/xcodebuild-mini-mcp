@@ -112,7 +112,7 @@ export async function listTests(options: {
   );
 
   if (result.exitCode !== 0) {
-    return `Failed to list tests.`;
+    return `Failed to list tests: ${result.stderr}`;
   }
 
   const lines = result.all?.split("\n");
