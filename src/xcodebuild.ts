@@ -2,8 +2,15 @@ import { execa } from "execa";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
+import fs from "fs";
 
 const DESTINATION = "platform=macOS,arch=arm64";
+const SKIP_ARGS = [
+  "-skipPackageUpdates",
+  "-skipPackagePluginValidation",
+  "-skipMacroValidation",
+  "-skipPackageSignatureValidation",
+];
 
 export async function build(options: {
   scheme: string;
@@ -11,7 +18,12 @@ export async function build(options: {
   forTesting?: boolean;
   src?: string;
 }): Promise<{ result: "success" | "failure"; text: string }> {
-  const { scheme, warn = false, forTesting = false, src = process.cwd() } = options;
+  const {
+    scheme,
+    warn = false,
+    forTesting = false,
+    src = process.cwd(),
+  } = options;
 
   const result = await execa(
     "xcodebuild",
@@ -88,12 +100,16 @@ export async function listTests(options: {
 }): Promise<string> {
   const { scheme, src = process.cwd() } = options;
 
+  const uuid = randomUUID();
+  const testEnumerationOutputPath = join(tmpdir(), uuid);
+
   const result = await execa(
     "xcodebuild",
     [
       "test",
       "-destination",
       DESTINATION,
+      "-quiet",
       "-destination-timeout",
       "0",
       "-scheme",
@@ -103,10 +119,12 @@ export async function listTests(options: {
       "flat",
       "-test-enumeration-format",
       "json",
+      "-test-enumeration-output-path",
+      testEnumerationOutputPath,
+      ...SKIP_ARGS,
     ],
     {
       cwd: src,
-      all: true,
       reject: false,
     }
   );
@@ -115,25 +133,39 @@ export async function listTests(options: {
     return `Failed to list tests: ${result.stderr}`;
   }
 
-  const lines = result.all?.split("\n");
-  const tests: string[] = [];
+  let tests: string[] = [];
 
-  for (const line of lines) {
-    if (line.includes("identifier")) {
-      const match = line.match(/"identifier"\s*:\s*"([^"]+)"/);
-      if (match) {
-        tests.push(match[1]);
-      }
-    }
+  // {
+  //   "errors": [],
+  //   "values": [
+  //     {
+  //       "disabledTests": [],
+  //       "enabledTests": [
+  //         {
+  //           "identifier": "foo/`bar tests`/`baz`()"
+  //         }
+  //       ],
+  //       "testPlan": "Project"
+  //     }
+  //   ]
+  // }
+
+  try {
+    const jsonResult = JSON.parse(
+      fs.readFileSync(testEnumerationOutputPath, "utf8")
+    );
+    tests = jsonResult.values[0].enabledTests.map(
+      (test: any) => test.identifier
+    );
+  } catch (error) {
+    return `Failed to parse test results: ${error}`;
   }
 
   if (tests.length === 0) {
     return "No tests found for this scheme.";
   }
 
-  return `Found ${tests.length} tests:\n${tests
-    .map((test, i) => `${i + 1}. ${test}`)
-    .join("\n")}`;
+  return tests.join("\n");
 }
 
 export async function runTests(options: {
@@ -160,12 +192,9 @@ export async function runTests(options: {
     "0",
     "-scheme",
     scheme,
-    "-skipPackageUpdates",
-    "-skipPackagePluginValidation",
-    "-skipMacroValidation",
-    "-skipPackageSignatureValidation",
     "-resultBundlePath",
     resultBundlePath,
+    ...SKIP_ARGS,
   ];
 
   if (only) {
