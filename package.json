@@ -5,20 +5,20 @@
   "engines": {
     "node": ">=22.18.0"
   },
-  "main": "src/index.js",
-  "bin": {
-    "xcodebuild-mini-mcp": "src/index.ts"
-  },
   "type": "module",
+  "bin": {
+    "xcodebuild-mini-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsc",
+    "prepublish": "npm run build",
     "dev": "node --watch src/index.ts",
     "debug": "node src/debug.ts",
     "test": "exit 0"
   },
-  "files": [
-    "src",
-    "tsconfig.json"
-  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "execa": "^9.6.0",
