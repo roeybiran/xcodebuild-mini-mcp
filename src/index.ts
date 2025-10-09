@@ -3,7 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { build, listTests, runTests } from "./xcodebuild.ts";
+import { build, listTests, runTests } from "./xcodebuild.js";
 
 const server = new McpServer({
   name: "xcodebuild-mini-mcp",

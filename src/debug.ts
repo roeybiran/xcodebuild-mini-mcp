@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { build, listTests, runTests } from "./xcodebuild.ts";
+import { build, listTests, runTests } from "./xcodebuild.js";
 
 (async () => {
   const action = process.argv[2];

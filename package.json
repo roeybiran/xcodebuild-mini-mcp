@@ -15,8 +15,7 @@
   "scripts": {
     "build": "tsc",
     "prepublish": "npm run build",
-    "dev": "node --watch src/index.ts",
-    "debug": "node src/debug.ts",
+    "debug": "npm run build && node dist/debug.js",
     "test": "exit 0"
   },
   "dependencies": {
