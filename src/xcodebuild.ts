@@ -45,53 +45,161 @@ export async function build(options: {
   );
 
   const errorLineMatcher = /\d: (error|warning): /;
-  if (result.exitCode !== 0) {
-    if (result.all.match(errorLineMatcher)) {
-      const errorsOrWarnings = result.all
-        .split("\n")
-        .map((line) => {
-          const match = line.match(errorLineMatcher);
-          if (match && match[1] === "error") {
-            return { type: "error", message: line };
-          } else if (match && match[1] === "warning") {
-            return { type: "warning", message: line };
-          }
-        })
-        .filter((item) => item !== undefined);
-
-      let output: string[] = [];
-      if (warn) {
-        output.push(...errorsOrWarnings.map((item) => item.message));
-      } else {
-        output.push(
-          ...errorsOrWarnings
-            .filter((item) => item.type === "error")
-            .map((item) => item.message)
-        );
+  const errorsAndWarnings = result.all
+    .split("\n")
+    .map((line) => {
+      const match = line.match(errorLineMatcher);
+      if (match && match[1] === "error") {
+        return { message: line, type: "error" };
+      } else if (warn && match && match[1] === "warning") {
+        return { message: line, type: "warning" };
       }
+    })
+    .sort((a, b) => {
+      if (!a || !b) return 0;
+      if (a.type === "error" && b.type === "warning") return -1;
+      if (a.type === "warning" && b.type === "error") return 1;
+      return 0;
+    })
+    .map((item) => item?.message ?? "")
+    .join("\n");
 
-      return { result: "failure", text: `BUILD FAILED\n${output.join("\n")}` };
+  if (result.exitCode === 0) {
+    if (errorsAndWarnings.length > 0) {
+      return {
+        result: "success",
+        text: `BUILD SUCCEEDED WITH WARNINGS\n${errorsAndWarnings}`,
+      };
+    }
+    return { result: "success", text: "BUILD SUCCEEDED" };
+  } else {
+    if (errorsAndWarnings.length > 0) {
+      return { result: "failure", text: `BUILD FAILED\n${errorsAndWarnings}` };
     } else {
       return {
         result: "failure",
-        text: `Error: an unknown error occurred:\n${result.all}`,
+        text: result.shortMessage ?? "AN UNKNOWN ERRORR HAS OCCURRED",
       };
     }
-  } else {
-    if (warn) {
-      const output = result.all ?? "";
-      const warnings = output
-        .split("\n")
-        .filter((line) => line.match(errorLineMatcher));
-      if (warnings.length > 0) {
-        return {
-          result: "success",
-          text: `BUILD SUCCEEDED WITH WARNINGS\n${warnings.join("\n")}`,
-        };
-      }
-    }
-    return { result: "success", text: "BUILD SUCCEEDED" };
   }
+}
+
+export async function runTests(options: {
+  scheme: string;
+  only?: string;
+  src?: string;
+  coverage?: boolean;
+}): Promise<string> {
+  const { scheme, only, src = process.cwd(), coverage = false } = options;
+
+  const buildResult = await build({ scheme, forTesting: true, src });
+
+  if (buildResult.result === "failure") {
+    return buildResult.text;
+  } else {
+    console.error(buildResult.text);
+  }
+
+  const uuid = randomUUID();
+  const resultBundlePath = join(tmpdir(), uuid);
+
+  const args = [
+    "test",
+    "-destination",
+    DESTINATION,
+    "-destination-timeout",
+    "0",
+    "-scheme",
+    scheme,
+    "-resultBundlePath",
+    resultBundlePath,
+    "-enableCodeCoverage",
+    coverage ? "YES" : "NO",
+    ...SKIP_ARGS,
+  ];
+
+  if (only) {
+    const allTests = await listTests({ scheme, src });
+    const matchingTests = allTests
+      .split("\n")
+      .filter((test) => test.includes(only))
+      .flatMap((test) => ["-only-testing", test]);
+    if (matchingTests.length === 0) {
+      return `No tests found for the given filter: ${only}`;
+    } else {
+      // console.error(`Running tests:\n${matchingTests.join("\n")}`);
+    }
+    args.push(...matchingTests);
+  }
+
+  await execa("xcodebuild", args, {
+    cwd: src,
+    all: true,
+    reject: false,
+  });
+
+  const xcresultOutput = await execa(
+    "xcrun",
+    [
+      "xcresulttool",
+      "get",
+      "test-results",
+      "summary",
+      "--path",
+      resultBundlePath,
+    ],
+    {
+      cwd: src,
+    }
+  );
+
+  let parsed;
+  try {
+    parsed = JSON.parse(xcresultOutput.stdout);
+  } catch (parseError) {
+    return `Error: failed to parse test results JSON: ${parseError}`;
+  }
+
+  const totalTests = parsed.totalTestCount || 0;
+  const failures = parsed.testFailures || [];
+
+  const failureDetails: {
+    Number: number;
+    TestName: string;
+    Identifier: string;
+    Failure: string;
+  }[] = failures.map((failure: any, i: number) => {
+    return [
+      `Test: ${failure.testName || "UNKNOWN"}`,
+      `Test Identifier: ${failure.testIdentifierString || "UNKNOWN"}`,
+      `Test Failure: ${failure.failureText || "UNKNOWN"}`,
+      `--------------------------------`,
+    ].join("\n");
+  });
+
+  let coverageOutput = "";
+  if (coverage) {
+    const { stdout } = await execa(
+      "xcrun",
+      ["xccov", "view", "--report", `${resultBundlePath}.xcresult`],
+      {
+        cwd: src,
+      }
+    );
+    coverageOutput = `COVERAGE:\n${stdout}`;
+  }
+
+  let statusMessage = "";
+  if (totalTests === 0) {
+    statusMessage =
+      "No tests were run. Are you sure the specified test(s) exist?";
+  } else if (failures.length === 0) {
+    statusMessage = "TEST SUCCEEDED";
+  } else {
+    statusMessage = `TEST FAILED\n${failureDetails.join("\n")}`;
+  }
+
+  return `${statusMessage}\n${coverageOutput}`;
 }
 
 export async function listTests(options: {
@@ -166,94 +274,4 @@ export async function listTests(options: {
   }
 
   return tests.join("\n");
-}
-
-export async function runTests(options: {
-  scheme: string;
-  only?: string;
-  src?: string;
-}): Promise<string> {
-  const { scheme, only, src = process.cwd() } = options;
-
-  const buildResult = await build({ scheme, forTesting: true, src });
-
-  if (buildResult.result === "failure") {
-    return buildResult.text;
-  }
-
-  const uuid = randomUUID();
-  const resultBundlePath = join(tmpdir(), uuid);
-
-  const args = [
-    "test",
-    "-destination",
-    DESTINATION,
-    "-destination-timeout",
-    "0",
-    "-scheme",
-    scheme,
-    "-resultBundlePath",
-    resultBundlePath,
-    ...SKIP_ARGS,
-  ];
-
-  if (only) {
-    args.push("-only-testing", only);
-  }
-
-  const testResult = await execa("xcodebuild", args, {
-    cwd: src,
-    all: true,
-    reject: false,
-  });
-
-  const xcresultOutput = await execa(
-    "xcrun",
-    [
-      "xcresulttool",
-      "get",
-      "test-results",
-      "summary",
-      "--path",
-      resultBundlePath,
-    ],
-    {
-      cwd: src,
-    }
-  );
-
-  let parsed;
-  try {
-    parsed = JSON.parse(xcresultOutput.stdout);
-  } catch (parseError) {
-    return `Error: failed to parse test results JSON: ${parseError}`;
-  }
-
-  const totalTests = parsed.totalTestCount || 0;
-
-  if (totalTests === 0) {
-    return "No tests were run. Are you sure the specified test(s) exist?";
-  }
-
-  const failures = parsed.testFailures || [];
-
-  if (failures.length === 0) {
-    return "TEST SUCCEEDED";
-  }
-
-  const failureDetails: {
-    Number: number;
-    TestName: string;
-    Identifier: string;
-    Failure: string;
-  }[] = failures.map((failure: any, i: number) => {
-    return [
-      `Test: ${failure.testName || "UNKNOWN"}`,
-      `Test Identifier: ${failure.testIdentifierString || "UNKNOWN"}`,
-      `Test Failure: ${failure.failureText || "UNKNOWN"}`,
-      `--------------------------------`,
-    ].join("\n");
-  });
-
-  return `TEST FAILED\n${failureDetails.join("\n")}`;
 }

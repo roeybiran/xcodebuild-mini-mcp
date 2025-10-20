@@ -87,9 +87,10 @@ server.tool(
     scheme: z.string(),
     only: z.string().optional(),
     src: z.string().optional(),
+    coverage: z.boolean().optional(),
   },
-  async ({ scheme, only, src }) => {
-    const result = await runTests({ scheme, only, src });
+  async ({ scheme, only, src, coverage }) => {
+    const result = await runTests({ scheme, only, src, coverage });
 
     return {
       content: [
