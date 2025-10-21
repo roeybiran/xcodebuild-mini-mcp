@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 
 const DESTINATION = "platform=macOS,arch=arm64";
-const SKIP_ARGS = [
+const SKIP_VALIDATIONS_ARGS = [
   "-skipPackageUpdates",
   "-skipPackagePluginValidation",
   "-skipMacroValidation",
@@ -51,7 +51,7 @@ export async function build(options: {
       const match = line.match(errorLineMatcher);
       if (match && match[1] === "error") {
         return { message: line, type: "error" };
-      } else if (warn && match && match[1] === "warning") {
+      } else if (match && match[1] === "warning") {
         return { message: line, type: "warning" };
       }
     })
@@ -65,13 +65,14 @@ export async function build(options: {
     .join("\n");
 
   if (result.exitCode === 0) {
-    if (errorsAndWarnings.length > 0) {
+    if (warn && errorsAndWarnings.length > 0) {
       return {
         result: "success",
         text: `BUILD SUCCEEDED WITH WARNINGS\n${errorsAndWarnings}`,
       };
-    }
+    } else {
     return { result: "success", text: "BUILD SUCCEEDED" };
+    }
   } else {
     if (errorsAndWarnings.length > 0) {
       return { result: "failure", text: `BUILD FAILED\n${errorsAndWarnings}` };
@@ -92,6 +93,7 @@ export async function runTests(options: {
 }): Promise<string> {
   const { scheme, only, src = process.cwd(), coverage = false } = options;
 
+  console.error("BUILDING...");
   const buildResult = await build({ scheme, forTesting: true, src });
 
   if (buildResult.result === "failure") {
@@ -103,7 +105,7 @@ export async function runTests(options: {
   const uuid = randomUUID();
   const resultBundlePath = join(tmpdir(), uuid);
 
-  const args = [
+  const xcodebuildTestingArgs = [
     "test",
     "-destination",
     DESTINATION,
@@ -115,24 +117,24 @@ export async function runTests(options: {
     resultBundlePath,
     "-enableCodeCoverage",
     coverage ? "YES" : "NO",
-    ...SKIP_ARGS,
+    ...SKIP_VALIDATIONS_ARGS,
   ];
 
   if (only) {
     const allTests = await listTests({ scheme, src });
     const matchingTests = allTests
       .split("\n")
-      .filter((test) => test.includes(only))
-      .flatMap((test) => ["-only-testing", test]);
+      .filter((test) => test.includes(only));
     if (matchingTests.length === 0) {
-      return `No tests found for the given filter: ${only}`;
+      return `No tests found for the given filter: ${only}.\nAvailable tests are:\n${allTests}`;
     } else {
       // console.error(`Running tests:\n${matchingTests.join("\n")}`);
     }
-    args.push(...matchingTests);
+    xcodebuildTestingArgs.push(...matchingTests.flatMap((test) => ["-only-testing", test]));
   }
 
-  await execa("xcodebuild", args, {
+  console.error("TESTING...");
+  await execa("xcodebuild", xcodebuildTestingArgs, {
     cwd: src,
     all: true,
     reject: false,
@@ -229,7 +231,7 @@ export async function listTests(options: {
       "json",
       "-test-enumeration-output-path",
       testEnumerationOutputPath,
-      ...SKIP_ARGS,
+      ...SKIP_VALIDATIONS_ARGS,
     ],
     {
       cwd: src,
