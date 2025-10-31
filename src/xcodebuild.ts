@@ -121,14 +121,13 @@ export async function runTests(options: {
   ];
 
   if (only) {
-    const allTests = await listTests({ scheme, src });
-    const matchingTests = allTests
-      .split("\n")
-      .filter((test) => test.includes(only));
+    const allTests = (await listTests({ scheme, src })).split("\n")
+    const matchingTests = allTests.filter((test) => test.includes(only));
     if (matchingTests.length === 0) {
       return `No tests found for the given filter: ${only}.\nAvailable tests are:\n${allTests}`;
     } else {
-      // console.error(`Running tests:\n${matchingTests.join("\n")}`);
+      const count = `${matchingTests.length} of ${allTests.length}`;
+      console.error(`Running ${count} tests`);
     }
     xcodebuildTestingArgs.push(...matchingTests.flatMap((test) => ["-only-testing", test]));
   }
