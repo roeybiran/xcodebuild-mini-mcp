@@ -5,6 +5,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { build, listTests, runTests } from "./xcodebuild.js";
 
+const schemeParam = z.string().describe("The scheme name");
+const srcParam = z.string().optional().describe("The source directory path");
+const warnParam = z.boolean().optional().describe("Whether to show warnings in the output");
+
 const server = new McpServer({
   name: "xcodebuild-mini-mcp",
   version: "1.0.0",
@@ -14,12 +18,12 @@ server.tool(
   "build",
   "Build the project, not including test targets",
   {
-    scheme: z.string(),
-    warn: z.boolean().optional(),
-    src: z.string().optional(),
+    scheme: schemeParam,
+    warn: warnParam,
+    src: srcParam,
   },
   async ({ scheme, warn, src }) => {
-    const result = await build({ scheme, warn: warn || false, src });
+    const result = await build({ scheme, warn, src });
 
     return {
       content: [
@@ -36,15 +40,15 @@ server.tool(
   "build_tests",
   "Build the project, including test targets",
   {
-    scheme: z.string(),
-    warn: z.boolean().optional(),
-    src: z.string().optional(),
+    scheme: schemeParam,
+    warn: warnParam,
+    src: srcParam,
   },
   async ({ scheme, warn, src }) => {
     const result = await build({
       scheme,
       forTesting: true,
-      warn: warn || false,
+      warn,
       src,
     });
 
@@ -63,8 +67,8 @@ server.tool(
   "list_tests",
   "List all tests for the project",
   {
-    scheme: z.string(),
-    src: z.string().optional(),
+    scheme: schemeParam,
+    src: srcParam,
   },
   async ({ scheme, src }) => {
     const result = await listTests({ scheme, src });
@@ -84,10 +88,10 @@ server.tool(
   "run_tests",
   "Runs the project's tests",
   {
-    scheme: z.string(),
-    only: z.string().optional(),
-    src: z.string().optional(),
-    coverage: z.boolean().optional(),
+    scheme: schemeParam,
+    only: z.string().optional().describe("Specific tests to run. Provide the full path to the test - TestTarget/TestSuite/TestName, including parentheses (e.g. 'MyAppTests/MyTestSuite/testExample()')"),
+    src: srcParam,
+    coverage: z.boolean().optional().describe("Whether to generate code coverage"),
   },
   async ({ scheme, only, src, coverage }) => {
     const result = await runTests({ scheme, only, src, coverage });

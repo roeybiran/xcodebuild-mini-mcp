@@ -68,18 +68,18 @@ export async function build(options: {
     if (warn && errorsAndWarnings.length > 0) {
       return {
         result: "success",
-        text: `BUILD SUCCEEDED WITH WARNINGS\n${errorsAndWarnings}`,
+        text: `Build succeeded with warnings\n${errorsAndWarnings}`,
       };
     } else {
-    return { result: "success", text: "BUILD SUCCEEDED" };
+    return { result: "success", text: "Build succeeded!" };
     }
   } else {
     if (errorsAndWarnings.length > 0) {
-      return { result: "failure", text: `BUILD FAILED\n${errorsAndWarnings}` };
+      return { result: "failure", text: `Build failed\n${errorsAndWarnings}` };
     } else {
       return {
         result: "failure",
-        text: result.shortMessage ?? "AN UNKNOWN ERRORR HAS OCCURRED",
+        text: result.shortMessage ?? "An unknown error has occurred",
       };
     }
   }
@@ -93,7 +93,7 @@ export async function runTests(options: {
 }): Promise<string> {
   const { scheme, only, src = process.cwd(), coverage = false } = options;
 
-  console.error("BUILDING...");
+  console.error("Building...");
   const buildResult = await build({ scheme, forTesting: true, src });
 
   if (buildResult.result === "failure") {
@@ -120,6 +120,8 @@ export async function runTests(options: {
     ...SKIP_VALIDATIONS_ARGS,
   ];
 
+  let testingMessage = "Running all tests...";
+
   if (only) {
     const allTests = (await listTests({ scheme, src })).split("\n")
     const matchingTests = allTests.filter((test) => test.includes(only));
@@ -127,12 +129,12 @@ export async function runTests(options: {
       return `No tests found for the given filter: ${only}.\nAvailable tests are:\n${allTests}`;
     } else {
       const count = `${matchingTests.length} of ${allTests.length}`;
-      console.error(`Running ${count} tests`);
+      testingMessage = `Running ${count} tests...`
     }
     xcodebuildTestingArgs.push(...matchingTests.flatMap((test) => ["-only-testing", test]));
   }
 
-  console.error("TESTING...");
+  console.error(testingMessage);
   await execa("xcodebuild", xcodebuildTestingArgs, {
     cwd: src,
     all: true,
@@ -180,14 +182,45 @@ export async function runTests(options: {
 
   let coverageOutput = "";
   if (coverage) {
+    /*
+    {
+    "coveredLines": 921,
+    "executableLines": 6005,
+    "lineCoverage": 0.1533721898417985,
+    "targets": [
+      {
+        "buildProductPath": "/Users/USER/Library/Developer/Xcode/DerivedData/APP/Build/Products/Debug/APP.app/Contents/MacOS/APP",
+        "coveredLines": 0,
+        "executableLines": 4180,
+        "files": [
+          {
+            "coveredLines": 0,
+            "executableLines": 59,
+            "functions": [
+              {
+                "coveredLines": 0,
+                "executableLines": 8,
+                "executionCount": 0,
+                "lineCoverage": 1, (0-1, 1 is 100% coverage)
+                "lineNumber": 17,
+                "name": "..."
+              },
+            ],
+            "lineCoverage": 0,
+            "name": "MainViewController.swift",
+            "path": "/Users/USER/Developer/APP/APP/Views/MainViewFeature/MainViewController.swift"
+          },
+        }
+      */
+
     const { stdout } = await execa(
       "xcrun",
-      ["xccov", "view", "--report", `${resultBundlePath}.xcresult`],
+      ["xccov", "view", "--json", "--report", `${resultBundlePath}.xcresult`],
       {
         cwd: src,
       }
     );
-    coverageOutput = `COVERAGE:\n${stdout}`;
+    coverageOutput = `Coverage:\n${stdout}`;
   }
 
   let statusMessage = "";
@@ -195,9 +228,9 @@ export async function runTests(options: {
     statusMessage =
       "No tests were run. Are you sure the specified test(s) exist?";
   } else if (failures.length === 0) {
-    statusMessage = "TEST SUCCEEDED";
+    statusMessage = "Testing succeeded!";
   } else {
-    statusMessage = `TEST FAILED\n${failureDetails.join("\n")}`;
+    statusMessage = `Testing failed\n${failureDetails.join("\n")}`;
   }
 
   return `${statusMessage}\n${coverageOutput}`;
